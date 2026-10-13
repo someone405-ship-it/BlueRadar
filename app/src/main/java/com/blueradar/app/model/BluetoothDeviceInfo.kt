@@ -19,8 +19,7 @@ data class BluetoothDeviceInfo(
     val lastSeen: Long = System.currentTimeMillis(),
     val rssiHistory: List<Int> = emptyList(),
     val isInWarningRange: Boolean = false,
-    val bondState: Int = BluetoothDevice.BOND_NONE,
-    val rawScanRecord: ByteArray? = null
+    val bondState: Int = BluetoothDevice.BOND_NONE
 ) : Parcelable {
 
     val displayName: String
