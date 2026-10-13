@@ -158,7 +158,14 @@ class BluetoothRadarService : Service() {
 
     private fun startClassicDiscovery() {
         val filter = android.content.IntentFilter(BluetoothDevice.ACTION_FOUND)
-        try { registerReceiver(classicReceiver, filter) } catch (_: Exception) {}
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(classicReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("UnspecifiedRegisterReceiverFlag")
+                registerReceiver(classicReceiver, filter)
+            }
+        } catch (_: Exception) {}
         try { bluetoothAdapter?.startDiscovery() } catch (_: SecurityException) {}
     }
 
@@ -184,17 +191,20 @@ class BluetoothRadarService : Service() {
         val history = ((existing?.rssiHistory ?: emptyList()) + rssi).takeLast(40)
 
         val info = BluetoothDeviceInfo(
-            address = address, name = name, rssi = rssi,
+            address = address,
+            name = name,
+            rssi = rssi,
             estimatedDistanceMeters = distance,
             isConnectable = result.isConnectable,
-            deviceType = finalType, manufacturer = manufacturer,
-            isBle = true, txPower = txPower,
+            deviceType = finalType,
+            manufacturer = manufacturer,
+            isBle = true,
+            txPower = txPower,
             firstSeen = existing?.firstSeen ?: System.currentTimeMillis(),
             lastSeen = System.currentTimeMillis(),
             rssiHistory = history,
             isInWarningRange = distance <= WARNING_DISTANCE_METERS,
-            bondState = try { device.bondState } catch (_: SecurityException) { BluetoothDevice.BOND_NONE },
-            rawScanRecord = result.scanRecord?.bytes
+            bondState = try { device.bondState } catch (_: SecurityException) { BluetoothDevice.BOND_NONE }
         )
 
         deviceMap[address] = info
@@ -209,8 +219,11 @@ class BluetoothRadarService : Service() {
         val existing = deviceMap[address]
 
         val info = BluetoothDeviceInfo(
-            address = address, name = name, rssi = rssi,
-            estimatedDistanceMeters = distance, isBle = false,
+            address = address,
+            name = name,
+            rssi = rssi,
+            estimatedDistanceMeters = distance,
+            isBle = false,
             deviceType = ManufacturerParser.classifyByName(name),
             firstSeen = existing?.firstSeen ?: System.currentTimeMillis(),
             lastSeen = System.currentTimeMillis(),
