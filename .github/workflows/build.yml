@@ -32,7 +32,6 @@ jobs:
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
           echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -43,10 +42,6 @@ jobs:
         run: gradle assembleDebug --stacktrace --no-daemon
         env:
           GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx2g"
-
-      - name: List APK output
-        if: always()
-        run: find app/build/outputs -name "*.apk" 2>/dev/null || echo "No APK found yet"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -76,9 +71,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Build EXE with PyInstaller
+      - name: Build EXE with PyInstaller (include bleak backends)
         working-directory: windows
-        run: pyinstaller --onefile --windowed --name BlueRadar --clean blueradar_windows.py
+        run: |
+          pyinstaller --onefile --windowed --name BlueRadar --clean ^
+            --collect-all bleak ^
+            --hidden-import blueradar_scanner ^
+            --hidden-import bleak.backends.winrt ^
+            blueradar_windows.py
 
       - name: Upload EXE
         uses: actions/upload-artifact@v4
