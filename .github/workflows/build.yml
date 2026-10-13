@@ -71,19 +71,74 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Build EXE with PyInstaller (include bleak backends)
+      - name: Build EXE with PyInstaller
         working-directory: windows
-        run: |
-          pyinstaller --onefile --windowed --name BlueRadar --clean ^
-            --collect-all bleak ^
-            --hidden-import blueradar_scanner ^
-            --hidden-import bleak.backends.winrt ^
-            blueradar_windows.py
+        run: >
+          pyinstaller --onefile --windowed --name BlueRadar --clean
+          --collect-all bleak
+          --hidden-import blueradar_scanner
+          --hidden-import updater
+          --hidden-import bleak.backends.winrt
+          blueradar_windows.py
 
-      - name: Upload EXE
+      - name: Upload EXE artifact
         uses: actions/upload-artifact@v4
         with:
           name: BlueRadar-exe
           path: windows/dist/BlueRadar.exe
           if-no-files-found: error
           retention-days: 30
+
+  release:
+    name: Publish Release
+    needs: [build-android, build-windows]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download EXE
+        uses: actions/download-artifact@v4
+        with:
+          name: BlueRadar-exe
+          path: dist
+
+      - name: Download APK
+        uses: actions/download-artifact@v4
+        with:
+          name: BlueRadar-apk
+          path: dist-apk
+
+      - name: Read version
+        id: ver
+        run: |
+          V=$(tr -d ' \n\r' < VERSION)
+          echo "version=$V" >> $GITHUB_OUTPUT
+          echo "tag=v$V" >> $GITHUB_OUTPUT
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release
+          cp dist/BlueRadar.exe release/BlueRadar.exe
+          APK=$(ls dist-apk/*.apk | head -1)
+          cp "$APK" release/BlueRadar.apk
+
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: BlueRadar ${{ steps.ver.outputs.tag }}
+          body: |
+            ## BlueRadar ${{ steps.ver.outputs.tag }}
+            **Windows:** BlueRadar.exe (supports in-app auto-update)
+            **Android:** BlueRadar.apk (install manually)
+          files: |
+            release/BlueRadar.exe
+            release/BlueRadar.apk
+          draft: false
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
