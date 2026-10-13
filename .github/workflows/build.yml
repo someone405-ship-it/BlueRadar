@@ -25,22 +25,28 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          packages: 'platform-tools'
+
+      - name: Install Android platform 35 + build-tools
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Create local.properties
-        run: |
-          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
-          echo "Using ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-
       - name: Build Debug APK
         run: gradle assembleDebug --stacktrace --no-daemon
         env:
           GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx2g"
+
+      - name: List APK output
+        if: always()
+        run: find app/build/outputs -name "*.apk" 2>/dev/null || echo "No APK found yet"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -72,8 +78,7 @@ jobs:
 
       - name: Build EXE with PyInstaller
         working-directory: windows
-        run: |
-          pyinstaller --onefile --windowed --name BlueRadar --clean blueradar_windows.py
+        run: pyinstaller --onefile --windowed --name BlueRadar --clean blueradar_windows.py
 
       - name: Upload EXE
         uses: actions/upload-artifact@v4
