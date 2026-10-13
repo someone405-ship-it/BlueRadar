@@ -1,2 +1,5 @@
 # BlueRadar
-Advanced Android Bluetooth proximity radar — detects nearby BLE &amp; Classic Bluetooth devices within ~10m with real-time warnings, RSSI distance estimation, radar UI and Material 3 design.
+
+**Advanced Bluetooth Proximity Radar** — Detects even the weakest Bluetooth signals within ~10 meters and alerts you instantly.
+
+See full README in repo after complete push.
