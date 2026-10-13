@@ -24,34 +24,29 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Make gradlew executable (if present)
+      - name: Create local.properties
         run: |
-          if [ -f ./gradlew ]; then chmod +x ./gradlew; fi
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+          echo "Using ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
 
       - name: Build Debug APK
-        run: |
-          if [ -f ./gradlew ]; then
-            ./gradlew assembleDebug --stacktrace --no-daemon
-          else
-            gradle assembleDebug --stacktrace --no-daemon
-          fi
+        run: gradle assembleDebug --stacktrace --no-daemon
         env:
           GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx2g"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
-        if: success()
         with:
           name: BlueRadar-apk
-          path: |
-            app/build/outputs/apk/debug/*.apk
-            app/build/outputs/apk/release/*.apk
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 30
 
