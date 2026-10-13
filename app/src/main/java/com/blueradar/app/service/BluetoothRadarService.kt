@@ -42,7 +42,7 @@ class BluetoothRadarService : Service() {
         private val _scanStats = MutableStateFlow(ScanStats())
         val scanStats: StateFlow<ScanStats> = _scanStats.asStateFlow()
 
-        const val MIN_RSSI_THRESHOLD = -110
+        const val MIN_RSSI_THRESHOLD = -120
         const val WARNING_DISTANCE_METERS = 10.0
     }
 
@@ -63,12 +63,8 @@ class BluetoothRadarService : Service() {
     private val ALERT_COOLDOWN_MS = 45_000L
 
     private val scanCallback = object : ScanCallback() {
-        override fun onScanResult(callbackType: Int, result: ScanResult) {
-            handleScanResult(result)
-        }
-        override fun onBatchScanResults(results: MutableList<ScanResult>) {
-            results.forEach { handleScanResult(it) }
-        }
+        override fun onScanResult(callbackType: Int, result: ScanResult) { handleScanResult(result) }
+        override fun onBatchScanResults(results: MutableList<ScanResult>) { results.forEach { handleScanResult(it) } }
         override fun onScanFailed(errorCode: Int) {
             serviceScope.launch {
                 delay(2000)
@@ -82,16 +78,11 @@ class BluetoothRadarService : Service() {
             when (intent?.action) {
                 BluetoothDevice.ACTION_FOUND -> {
                     val device: BluetoothDevice? =
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
                             intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
-                        } else {
-                            @Suppress("DEPRECATION")
-                            intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
-                        }
+                        else @Suppress("DEPRECATION") intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
                     val rssi = intent.getShortExtra(BluetoothDevice.EXTRA_RSSI, Short.MIN_VALUE).toInt()
-                    if (device != null && rssi > MIN_RSSI_THRESHOLD) {
-                        handleClassicDevice(device, rssi)
-                    }
+                    if (device != null && rssi > MIN_RSSI_THRESHOLD) handleClassicDevice(device, rssi)
                 }
             }
         }
@@ -122,15 +113,24 @@ class BluetoothRadarService : Service() {
         scanStartTime = System.currentTimeMillis()
         wakeLock?.acquire(10 * 60 * 60 * 1000L)
 
-        val notification = buildOngoingNotification("Scanning for nearby Bluetooth signals…")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        val notification = buildOngoingNotification("Scanning for nearby Bluetooth signals...")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
+        else startForeground(NOTIFICATION_ID, notification)
 
         startBleScan(aggressive = true)
         startClassicDiscovery()
+
+        serviceScope.launch {
+            while (_isScanning.value) {
+                delay(12_000)
+                try {
+                    bluetoothAdapter?.cancelDiscovery()
+                    delay(500)
+                    bluetoothAdapter?.startDiscovery()
+                } catch (_: Exception) {}
+            }
+        }
 
         serviceScope.launch {
             while (_isScanning.value) {
@@ -158,7 +158,7 @@ class BluetoothRadarService : Service() {
 
     private fun startClassicDiscovery() {
         val filter = android.content.IntentFilter(BluetoothDevice.ACTION_FOUND)
-        registerReceiver(classicReceiver, filter)
+        try { registerReceiver(classicReceiver, filter) } catch (_: Exception) {}
         try { bluetoothAdapter?.startDiscovery() } catch (_: SecurityException) {}
     }
 
@@ -180,24 +180,18 @@ class BluetoothRadarService : Service() {
 
         val txPower = result.scanRecord?.txPowerLevel?.takeIf { it != Int.MIN_VALUE }
         val distance = BluetoothDeviceInfo.estimateDistance(rssi, txPower ?: -59)
-
         val existing = deviceMap[address]
-        val history = (existing?.rssiHistory ?: emptyList()) + rssi
-        val trimmedHistory = history.takeLast(40)
+        val history = ((existing?.rssiHistory ?: emptyList()) + rssi).takeLast(40)
 
         val info = BluetoothDeviceInfo(
-            address = address,
-            name = name,
-            rssi = rssi,
+            address = address, name = name, rssi = rssi,
             estimatedDistanceMeters = distance,
             isConnectable = result.isConnectable,
-            deviceType = finalType,
-            manufacturer = manufacturer,
-            isBle = true,
-            txPower = txPower,
+            deviceType = finalType, manufacturer = manufacturer,
+            isBle = true, txPower = txPower,
             firstSeen = existing?.firstSeen ?: System.currentTimeMillis(),
             lastSeen = System.currentTimeMillis(),
-            rssiHistory = trimmedHistory,
+            rssiHistory = history,
             isInWarningRange = distance <= WARNING_DISTANCE_METERS,
             bondState = try { device.bondState } catch (_: SecurityException) { BluetoothDevice.BOND_NONE },
             rawScanRecord = result.scanRecord?.bytes
@@ -205,7 +199,6 @@ class BluetoothRadarService : Service() {
 
         deviceMap[address] = info
         _devices.value = HashMap(deviceMap)
-
         if (info.isInWarningRange) maybeAlert(info)
     }
 
@@ -216,11 +209,8 @@ class BluetoothRadarService : Service() {
         val existing = deviceMap[address]
 
         val info = BluetoothDeviceInfo(
-            address = address,
-            name = name,
-            rssi = rssi,
-            estimatedDistanceMeters = distance,
-            isBle = false,
+            address = address, name = name, rssi = rssi,
+            estimatedDistanceMeters = distance, isBle = false,
             deviceType = ManufacturerParser.classifyByName(name),
             firstSeen = existing?.firstSeen ?: System.currentTimeMillis(),
             lastSeen = System.currentTimeMillis(),
@@ -235,20 +225,20 @@ class BluetoothRadarService : Service() {
 
     private fun maybeAlert(info: BluetoothDeviceInfo) {
         val now = System.currentTimeMillis()
-        val last = recentlyAlerted[info.address] ?: 0L
-        if (now - last < ALERT_COOLDOWN_MS) return
+        if (now - (recentlyAlerted[info.address] ?: 0L) < ALERT_COOLDOWN_MS) return
         recentlyAlerted[info.address] = now
 
         val level = info.proximityLevel
         val title = when (level) {
-            ProximityLevel.IMMEDIATE -> "⚠ VERY CLOSE — ${info.displayName}"
-            ProximityLevel.NEAR -> "⚠ Nearby device — ${info.displayName}"
-            else -> "Device in range — ${info.displayName}"
+            ProximityLevel.IMMEDIATE -> "VERY CLOSE - ${info.displayName}"
+            ProximityLevel.NEAR -> "Nearby device - ${info.displayName}"
+            else -> "Device in range - ${info.displayName}"
         }
         val body = buildString {
-            append("%.1fm · RSSI %d dBm".format(info.estimatedDistanceMeters, info.rssi))
-            info.manufacturer?.let { append(" · $it") }
-            append(" · ${info.deviceType.name.lowercase().replaceFirstChar { it.uppercase() }}")
+            append("%.1fm | RSSI %d dBm".format(info.estimatedDistanceMeters, info.rssi))
+            info.manufacturer?.let { append(" | $it") }
+            if (info.name.isNullOrBlank()) append(" | HIDDEN")
+            append(" | ${info.deviceType.name.lowercase().replaceFirstChar { it.uppercase() }}")
         }
 
         val notification = NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
@@ -263,13 +253,8 @@ class BluetoothRadarService : Service() {
                 ProximityLevel.NEAR -> longArrayOf(0, 250, 120, 250)
                 else -> longArrayOf(0, 180)
             })
-            .setContentIntent(
-                PendingIntent.getActivity(
-                    this, 0,
-                    Intent(this, MainActivity::class.java),
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
-            )
+            .setContentIntent(PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
             .build()
 
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -278,11 +263,10 @@ class BluetoothRadarService : Service() {
 
     private fun cleanupStaleDevices() {
         val now = System.currentTimeMillis()
-        val timeout = 25_000L
+        val timeout = 90_000L
         val iterator = deviceMap.entries.iterator()
         while (iterator.hasNext()) {
-            val entry = iterator.next()
-            if (now - entry.value.lastSeen > timeout) iterator.remove()
+            if (now - iterator.next().value.lastSeen > timeout) iterator.remove()
         }
         _devices.value = HashMap(deviceMap)
     }
@@ -290,14 +274,13 @@ class BluetoothRadarService : Service() {
     private fun updateStats() {
         val list = deviceMap.values
         _scanStats.value = ScanStats(
-            totalSeen = list.size,
-            currentlyVisible = list.size,
+            totalSeen = list.size, currentlyVisible = list.size,
             inWarningRange = list.count { it.isInWarningRange },
             scanUptimeMs = System.currentTimeMillis() - scanStartTime
         )
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.notify(NOTIFICATION_ID, buildOngoingNotification(
-            "${list.size} devices · ${list.count { it.isInWarningRange }} in 10 m zone"
+            "${list.size} devices | ${list.count { it.isInWarningRange }} in 10 m zone"
         ))
     }
 
@@ -316,13 +299,11 @@ class BluetoothRadarService : Service() {
     private fun createNotificationChannels() {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.createNotificationChannel(NotificationChannel(CHANNEL_ID, "Bluetooth Radar Scanning", NotificationManager.IMPORTANCE_LOW).apply {
-            description = "Ongoing scan status"
-            setShowBadge(false)
+            description = "Ongoing scan status"; setShowBadge(false)
         })
         nm.createNotificationChannel(NotificationChannel(ALERT_CHANNEL_ID, "Proximity Alerts", NotificationManager.IMPORTANCE_HIGH).apply {
             description = "Warnings when devices enter the 10 m zone"
-            enableVibration(true)
-            vibrationPattern = longArrayOf(0, 300, 150, 300)
+            enableVibration(true); vibrationPattern = longArrayOf(0, 300, 150, 300)
         })
     }
 
@@ -331,17 +312,13 @@ class BluetoothRadarService : Service() {
             .setContentTitle("BlueRadar Active")
             .setContentText(text)
             .setSmallIcon(R.drawable.ic_radar)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setContentIntent(
-                PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java),
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-            )
+            .setOngoing(true).setOnlyAlertOnce(true)
+            .setContentIntent(PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
             .addAction(R.drawable.ic_stop, "Stop",
                 PendingIntent.getService(this, 1,
                     Intent(this, BluetoothRadarService::class.java).setAction(ACTION_STOP),
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-            )
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
             .build()
     }
 
