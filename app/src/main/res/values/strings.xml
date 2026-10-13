@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">BlueRadar</string>
+    <string name="scan_notification_title">BlueRadar Active</string>
+    <string name="scan_notification_text">Scanning for nearby Bluetooth signals…</string>
+</resources>
