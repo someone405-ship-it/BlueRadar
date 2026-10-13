@@ -124,10 +124,10 @@ private fun InfoChip(label: String, color: Color) {
 private fun iconForType(type: DeviceType) = when (type) {
     DeviceType.PHONE -> Icons.Default.Smartphone
     DeviceType.HEADSET -> Icons.Default.Headphones
-    DeviceType.SPEAKER -> Icons.Default.Speaker
+    DeviceType.SPEAKER -> Icons.Default.VolumeUp
     DeviceType.TRACKER -> Icons.Default.LocationOn
     DeviceType.WEARABLE -> Icons.Default.Watch
-    DeviceType.COMPUTER -> Icons.Default.Laptop
+    DeviceType.COMPUTER -> Icons.Default.Computer
     DeviceType.KEYBOARD_MOUSE -> Icons.Default.Keyboard
     DeviceType.UNKNOWN -> Icons.Outlined.BluetoothSearching
 }
