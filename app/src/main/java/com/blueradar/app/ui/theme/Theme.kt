@@ -36,7 +36,7 @@ fun BlueRadarTheme(
 ) {
     MaterialTheme(
         colorScheme = DarkColorScheme,
-        typography = Typography(),
+        typography = Typography,
         content = content
     )
 }
